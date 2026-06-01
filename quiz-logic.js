@@ -1,4 +1,4 @@
-// Quiz Logic JavaScript File - Complete Version with All Questions
+// Quiz Logic JavaScript File - Complete Version with Ordered & Random Modes
 
 let currentSection = null;
 let currentQuestionIndex = 0;
@@ -8,6 +8,7 @@ let allQuestions = [];
 let questionsForRound = [];
 let userAnswers = [];
 let answered = false;
+let isRandomMode = false; // NEW: Track if random or ordered mode
 
 // Question Banks - Organized by Section
 const questionBanks = {
@@ -38,13 +39,10 @@ async function loadAllQuestionBanks() {
             const text1 = await response1.text();
             
             // Parse questions.js format
-            // The file contains: questionsBank[1] = [...]
             const match = text1.match(/questionsBank\[1\]\s*=\s*\[([\s\S]*?)\];/);
             
             if (match) {
-                // Use Function constructor to safely evaluate the array
                 const arrayString = '[' + match[1] + ']';
-                // Replace incomplete options with proper handling
                 const cleanedString = arrayString
                     .replace(/,\s*o:\s*\[([^\]]*)\[\.\.\.]/g, ', o: ["incomplete"')
                     .replace(/,\s*q:\s*"([^"]*)\[\.\.\."/g, ', q: "$1"')
@@ -54,7 +52,7 @@ async function loadAllQuestionBanks() {
                 console.log(`✓ Section 1 (Molecular & Cell Biology): ${questionBanks[1].length} questions loaded`);
             }
         } catch (err) {
-            console.warn('Could not load questions.js, attempting direct parsing...', err);
+            console.warn('Could not load questions.js:', err);
         }
 
         // ===== SECTION 2: Load from quiz2.json (Cell Cycle & Genetics) =====
@@ -107,7 +105,6 @@ async function loadAllQuestionBanks() {
 
         questionsLoaded = true;
 
-        // Check if any section is empty
         if (totalQuestions === 0) {
             console.warn('⚠️ No questions loaded! Loading sample questions...');
             loadSampleQuestions();
@@ -121,7 +118,6 @@ async function loadAllQuestionBanks() {
 
 // Load sample questions as fallback
 function loadSampleQuestions() {
-    // Section 1: Molecular & Cell Biology Sample
     questionBanks[1] = [
         {
             q: "What is the major component of DNA?",
@@ -132,56 +128,29 @@ function loadSampleQuestions() {
             q: "Purine nitrogenous bases are:",
             o: ["A + T", "C + T", "A + G", "G + T"],
             a: 2
-        },
-        {
-            q: "What type of inheritance is characteristic for mitochondrial DNA?",
-            o: ["horizontal", "vertical", "paternal", "maternal"],
-            a: 3
         }
     ];
 
-    // Section 2: Cell Cycle & Genetics Sample
     questionBanks[2] = [
         {
             question: "What are the two major phases of the eukaryotic cell cycle?",
-            options: {"a": "Mitosis and Meiosis", "b": "Interphase and M phase", "c": "G1 and G2", "d": "Prophase and Metaphase"},
-            correct_answer: "b"
-        },
-        {
-            question: "During which specific subphase of Interphase does DNA replication occur?",
-            options: {"a": "G1 phase", "b": "S phase", "c": "G2 phase", "d": "G0 phase"},
+            options: {"a": "Mitosis and Meiosis", "b": "Interphase and M phase"},
             correct_answer: "b"
         }
     ];
 
-    // Section 3: Comparative Anatomy Sample
     questionBanks[3] = [
         {
-            question_number: 1,
             question: "What is the genetic characteristic of a population?",
-            options: {"a": "sex ratio", "b": "gene pool", "c": "genetic differences", "d": "gene flow"},
+            options: {"a": "sex ratio", "b": "gene pool"},
             correct_answer: "b"
-        },
-        {
-            question_number: 2,
-            question: "Characteristics of the circulatory system of fishes are:",
-            options: {"a": "closed, three-chamber heart", "b": "opened, two-chamber heart", "c": "closed, two-chamber heart", "d": "four-chamber heart"},
-            correct_answer: "c"
         }
     ];
 
-    // Section 4: Parasitology & Disease Sample
     questionBanks[4] = [
         {
-            question_number: 1,
             question: "What parasite causes dysentery?",
-            options: {"a": "Entamoeba histolytica", "b": "Balantidium coli", "c": "Trichomonas hominis", "d": "Giardia lamblia"},
-            correct_answer: "a"
-        },
-        {
-            question_number: 2,
-            question: "What protozoal disease causes appearance of bloody diarrhea?",
-            options: {"a": "amebiasis", "b": "leishmaniasis", "c": "trypanosomiasis", "d": "trichomoniasis"},
+            options: {"a": "Entamoeba histolytica", "b": "Balantidium coli"},
             correct_answer: "a"
         }
     ];
@@ -189,14 +158,15 @@ function loadSampleQuestions() {
     console.log('✓ Sample questions loaded as fallback');
 }
 
-// Start Quiz
-function startQuiz(section) {
+// Start Quiz - NEW: Accept randomMode parameter
+function startQuiz(section, randomMode = false) {
     currentSection = section;
     currentQuestionIndex = 0;
     currentRound = 1;
     correctAnswersInRound = 0;
     userAnswers = [];
     answered = false;
+    isRandomMode = randomMode; // NEW: Store mode preference
 
     // Get questions from the selected section - DO NOT MIX SECTIONS
     allQuestions = questionBanks[section] || [];
@@ -206,10 +176,10 @@ function startQuiz(section) {
         return;
     }
 
-    console.log(`Starting Quiz - Section ${section} with ${allQuestions.length} available questions`);
+    console.log(`Starting Quiz - Section ${section} with ${allQuestions.length} available questions (${randomMode ? 'RANDOM' : 'ORDERED'} MODE)`);
 
-    // Select 10 random questions from THIS SECTION ONLY
-    selectRandomQuestions(10);
+    // Select 10 questions - ordered or random
+    selectQuestions(10, randomMode);
 
     console.log(`Selected 10 questions for Round 1 from Section ${section}`);
 
@@ -219,7 +189,7 @@ function startQuiz(section) {
     document.getElementById('resultsView').classList.remove('show');
     document.querySelector('.back-button').classList.add('show');
 
-    // Set section title
+    // Set section title and mode badge
     const titles = {
         1: 'Molecular & Cell Biology',
         2: 'Cell Cycle & Genetics',
@@ -227,13 +197,14 @@ function startQuiz(section) {
         4: 'Parasitology & Disease'
     };
     document.getElementById('sectionTitle').textContent = titles[section];
+    document.getElementById('modeBadge').textContent = randomMode ? '🔀 Random Mix' : '📋 Ordered';
     document.getElementById('totalQuestions').textContent = '10';
 
     loadQuestion();
 }
 
-// Select random questions FROM CURRENT SECTION ONLY
-function selectRandomQuestions(count) {
+// Select questions - ORDERED or RANDOM
+function selectQuestions(count, randomMode) {
     questionsForRound = [];
     
     if (allQuestions.length === 0) {
@@ -241,11 +212,16 @@ function selectRandomQuestions(count) {
         return;
     }
 
-    // Shuffle and select only from current section
-    const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
-    questionsForRound = shuffled.slice(0, Math.min(count, shuffled.length));
-    
-    console.log(`Selected ${questionsForRound.length} questions from ${allQuestions.length} available`);
+    if (randomMode) {
+        // RANDOM MODE: Shuffle and select
+        const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
+        questionsForRound = shuffled.slice(0, Math.min(count, shuffled.length));
+        console.log(`🔀 Random Mode: Selected ${questionsForRound.length} questions (shuffled)`);
+    } else {
+        // ORDERED MODE: Select from beginning in order
+        questionsForRound = allQuestions.slice(0, Math.min(count, allQuestions.length));
+        console.log(`📋 Ordered Mode: Selected ${questionsForRound.length} questions (in sequence)`);
+    }
 }
 
 // Load current question
@@ -264,10 +240,9 @@ function loadQuestion() {
     const progressPercent = ((currentQuestionIndex + 1) / questionsForRound.length) * 100;
     document.getElementById('progressFill').style.width = progressPercent + '%';
 
-    // Load question text - Handle different formats
+    // Load question text
     let questionText = question.q || question.question || '';
     
-    // Clean up truncated questions
     if (questionText.includes('[...]')) {
         questionText = questionText.replace(/\s*\[\.\.\.\]\s*$/g, '');
     }
@@ -281,27 +256,23 @@ function loadQuestion() {
     let options = question.o || question.options || {};
     let correctAnswerIndex = question.a || question.correct_answer || 0;
 
-    // Convert correct_answer from letter (a, b, c) to index (0, 1, 2)
+    // Convert letter to index
     if (typeof correctAnswerIndex === 'string') {
         correctAnswerIndex = correctAnswerIndex.charCodeAt(0) - 'a'.charCodeAt(0);
     }
 
-    // Handle different option formats
+    // Handle option formats
     if (Array.isArray(options)) {
-        // Format: o: ["option1", "option2", ...]
         options.forEach((option, index) => {
             const btn = createOptionButton(option, index, correctAnswerIndex);
             optionsContainer.appendChild(btn);
         });
     } else if (typeof options === 'object' && Object.keys(options).length > 0) {
-        // Format: options: {a: "option1", b: "option2", ...}
         const optionsArray = Object.values(options);
         optionsArray.forEach((option, index) => {
             const btn = createOptionButton(option, index, correctAnswerIndex);
             optionsContainer.appendChild(btn);
         });
-    } else {
-        console.warn('No valid options found for question:', question);
     }
 
     // Reset feedback
@@ -326,7 +297,6 @@ function selectOption(selectedIndex, correctIndex, buttonElement) {
     answered = true;
     const isCorrect = selectedIndex === correctIndex;
 
-    // Store answer
     userAnswers.push({
         question: questionsForRound[currentQuestionIndex],
         selected: selectedIndex,
@@ -350,10 +320,7 @@ function selectOption(selectedIndex, correctIndex, buttonElement) {
         }
     });
 
-    // Show feedback
     showFeedback(isCorrect, correctIndex);
-
-    // Enable next button
     document.getElementById('nextBtn').disabled = false;
 }
 
@@ -374,7 +341,6 @@ function showFeedback(isCorrect, correctIndex) {
         icon.textContent = '✗';
         text.textContent = 'Incorrect! ';
         
-        // Add correct answer hint
         const question = questionsForRound[currentQuestionIndex];
         let options = question.o || question.options || [];
         
@@ -400,11 +366,9 @@ function showResults() {
     const percentage = Math.round((correctAnswersInRound / questionsForRound.length) * 100);
     const passed = correctAnswersInRound >= 5; // Pass with 50% (5/10)
 
-    // Hide quiz view
     document.getElementById('quizView').classList.remove('show');
     document.getElementById('resultsView').classList.add('show');
 
-    // Update results display
     document.getElementById('scoreDisplay').textContent = `${correctAnswersInRound}/10`;
     document.getElementById('correctCount').textContent = correctAnswersInRound;
     document.getElementById('wrongCount').textContent = questionsForRound.length - correctAnswersInRound;
@@ -414,7 +378,6 @@ function showResults() {
     scoreDisplay.classList.remove('passed', 'failed');
     scoreDisplay.classList.add(passed ? 'passed' : 'failed');
 
-    // Set message
     const message = document.getElementById('resultMessage');
     if (passed) {
         message.textContent = 'Congratulations! You passed Round ' + currentRound + '! 🎉';
@@ -425,7 +388,6 @@ function showResults() {
         message.textContent = 'You need to score at least 5/10 to pass. Try again!';
     }
 
-    // Set action buttons
     const actionButtons = document.getElementById('actionButtons');
     actionButtons.innerHTML = '';
 
@@ -446,7 +408,7 @@ function showResults() {
     const btnRetry = document.createElement('button');
     btnRetry.className = 'btn btn-secondary';
     btnRetry.textContent = 'Try Again';
-    btnRetry.onclick = () => startQuiz(currentSection);
+    btnRetry.onclick = () => startQuiz(currentSection, isRandomMode); // NEW: Pass mode
     actionButtons.appendChild(btnRetry);
 
     const btnHome = document.createElement('button');
@@ -464,12 +426,11 @@ function startRound2() {
     userAnswers = [];
     answered = false;
 
-    // Select NEW 10 random questions from SAME SECTION
-    selectRandomQuestions(10);
+    // NEW: Select with same mode (ordered or random)
+    selectQuestions(10, isRandomMode);
 
-    console.log(`Starting Round 2 - Section ${currentSection}`);
+    console.log(`Starting Round 2 - Section ${currentSection} (${isRandomMode ? 'RANDOM' : 'ORDERED'} MODE)`);
 
-    // Reset UI
     document.getElementById('resultsView').classList.remove('show');
     document.getElementById('quizView').classList.add('show');
 
@@ -483,16 +444,16 @@ function goBack() {
     document.getElementById('resultsView').classList.remove('show');
     document.querySelector('.back-button').classList.remove('show');
 
-    // Reset state
     currentSection = null;
     currentQuestionIndex = 0;
     currentRound = 1;
     correctAnswersInRound = 0;
     userAnswers = [];
     answered = false;
+    isRandomMode = false; // NEW: Reset mode
 }
 
-// Keyboard support - Press Enter to go to next question
+// Keyboard support
 document.addEventListener('keydown', (e) => {
     if (document.getElementById('quizView').classList.contains('show')) {
         if (e.key === 'Enter' && !document.getElementById('nextBtn').disabled) {
@@ -501,4 +462,4 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-console.log('🚀 Quiz Logic Loaded Successfully - Ready for 600+ Questions!');
+console.log('🚀 Quiz Logic Loaded Successfully - Ordered & Random Modes Available!');
